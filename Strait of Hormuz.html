@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Global Oil Transit Flows and Maritime Chokepoints (2026)</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    :root {
+      --inflow: #4CC9F0;
+      --outflow: #E76F7A;
+      --focus: #FFB703;
+      --secondary: #7A7F87;
+      --text: #F3F4F6;
+
+      --edge-gap: clamp(10px, 1.2vw, 18px);
+      --panel-gap: clamp(8px, 1vw, 12px);
+      --panel-radius: 10px;
+
+      --title-width: clamp(240px, 28vw, 400px);
+      --right-panel-width: clamp(280px, 34vw, 505px);
+      --legend-width: clamp(150px, 17vw, 190px);
+      --source-width: clamp(220px, 22vw, 300px);
+      --chart-width: min(760px, calc(100vw - (var(--edge-gap) * 2)));
+
+      --panel-max-height: min(52dvh, calc(100dvh - (var(--edge-gap) * 2)));
+      --panel-bg: rgba(17, 17, 17, 0.90);
+      --panel-bg-soft: rgba(17, 17, 17, 0.88);
+      --panel-border: 1px solid rgba(243, 244, 246, 0.16);
+      --panel-border-soft: 1px solid rgba(243, 244, 246, 0.15);
+      --panel-shadow: 0 2px 12px rgba(0,0,0,0.42);
+      --panel-shadow-soft: 0 2px 10px rgba(0,0,0,0.4);
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #111;
+      font-family: Arial, sans-serif;
+    }
+
+    #map {
+      width: 100%;
+      height: 100vh;
+      position: relative;
+    }
+
+    canvas.flow-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      z-index: 450;
+    }
+
+    .leaflet-control-attribution {
+      background: rgba(20, 20, 20, 0.8) !important;
+      color: var(--text) !important;
+    }
+
+    .leaflet-control-attribution a {
+      color: var(--text) !important;
+      opacity: 0.9;
+    }
+
+    .overlay-panel {
+      position: fixed;
+      box-sizing: border-box;
+      background: var(--panel-bg);
+      border: var(--panel-border);
+      border-radius: var(--panel-radius);
+      box-shadow: var(--panel-shadow);
+      color: var(--text);
+      overflow: hidden;
+      max-width: calc(100vw - (var(--edge-gap) * 2));
+      pointer-events: auto;
+    }
+
+    .overlay-panel.hidden {
+      display: none;
+    }
+
+    .overlay-panel--soft {
+      background: var(--panel-bg-soft);
+      border: var(--panel-border-soft);
+      box-shadow: var(--panel-shadow-soft);
+    }
+
+    .overlay-panel--scroll {
+      max-height: var(--panel-max-height);
+      overflow-y: auto;
+    }
+
+    .overlay-panel--top-left {
+      top: var(--edge-gap);
+      left: var(--edge-gap);
+    }
+
+    .overlay-panel--top-right {
+      top: var(--edge-gap);
+      right: var(--edge-gap);
+    }
+
+    .overlay-panel--bottom-left {
+      bottom: var(--edge-gap);
+      left: var(--edge-gap);
+    }
+
+    .overlay-panel--bottom-right {
+      bottom: var(--edge-gap);
+      right: var(--edge-gap);
+    }
+
+    .overlay-panel--center-bottom {
+      left: 50%;
+      bottom: var(--edge-gap);
+      transform: translateX(-50%);
+    }
+
+    .leaflet-tooltip.chokepoint-label-active {
+      background: rgba(255, 183, 3, 0.18);
+      color: var(--text);
+      border: 1px solid rgba(255, 183, 3, 0.8);
+      box-shadow: 0 1px 6px rgba(0,0,0,0.35);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 7px;
+      border-radius: 4px;
+    }
+
+    .leaflet-tooltip.chokepoint-label-active:before {
+      border-top-color: rgba(255, 183, 3, 0.18);
+    }
+
+    .leaflet-tooltip.hormuz-importer-label {
+      background: rgba(231, 111, 122, 0.18);
+      color: var(--text);
+      border: 1px solid rgba(231, 111, 122, 0.85);
+      box-shadow: 0 1px 6px rgba(0,0,0,0.35);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 7px;
+      border-radius: 4px;
+    }
+
+    .leaflet-tooltip.hormuz-exporter-label {
+      background: rgba(76, 201, 240, 0.18);
+      color: var(--text);
+      border: 1px solid rgba(76, 201, 240, 0.85);
+      box-shadow: 0 1px 6px rgba(0,0,0,0.35);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 7px;
+      border-radius: 4px;
+    }
+
+    .leaflet-tooltip.hormuz-importer-label.leaflet-tooltip-top:before {
+      border-top-color: rgba(231, 111, 122, 0.18);
+    }
+
+    .leaflet-tooltip.hormuz-importer-label.leaflet-tooltip-bottom:before {
+      border-bottom-color: rgba(231, 111, 122, 0.18);
+    }
+
+    .leaflet-tooltip.hormuz-importer-label.leaflet-tooltip-left:before {
+      border-left-color: rgba(231, 111, 122, 0.18);
+    }
+
+    .leaflet-tooltip.hormuz-importer-label.leaflet-tooltip-right:before {
+      border-right-color: rgba(231, 111, 122, 0.18);
+    }
+
+    .leaflet-tooltip.hormuz-exporter-label.leaflet-tooltip-top:before {
+      border-top-color: rgba(76, 201, 240, 0.18);
+    }
+
+    .leaflet-tooltip.hormuz-exporter-label.leaflet-tooltip-bottom:before {
+      border-bottom-color: rgba(76, 201, 240, 0.18);
+    }
+
+    .leaflet-tooltip.hormuz-exporter-label.leaflet-tooltip-left:before {
+      border-left-color: rgba(76, 201, 240, 0.18);
+    }
+
+    .leaflet-tooltip.hormuz-exporter-label.leaflet-tooltip-right:before {
+      border-right-color: rgba(76, 201, 240, 0.18);
+    }
+
+    .chokepoint-label-muted-div {
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.2;
+      white-space: nowrap;
+      background: rgba(122, 127, 135, 0.30);
+      border: 1px solid rgba(122, 127, 135, 0.65);
+      box-shadow: 0 1px 6px rgba(0,0,0,0.28);
+      border-radius: 4px;
+      padding: 3px 6px;
+      pointer-events: none;
+    }
+
+    .chokepoint-label-muted-wrap {
+      background: transparent;
+      border: 0;
+    }
+
+    .map-title-panel {
+      z-index: 1100;
+      width: min(
+        var(--title-width),
+        max(120px, calc(100vw - var(--right-panel-width) - (var(--edge-gap) * 3)))
+      );
+      padding: 10px 14px;
+    }
+
+    .map-title-main {
+      font-size: 30px;
+      font-weight: 500;
+      color: var(--focus);
+      text-align: center;
+      line-height: 1.3;
+    }
+
+    .map-title-sub {
+      font-size: 11.5px;
+      opacity: 0.85;
+      margin-top: 3px;
+      text-align: center;
+    }
+
+    .hormuz-status-panel {
+      z-index: 1100;
+      width: min(var(--right-panel-width), calc(100vw - (var(--edge-gap) * 2)));
+      padding: 12px 14px;
+      font-size: 11.5px;
+      line-height: 1.2;
+    }
+
+    .map-description-panel {
+      z-index: 1000;
+      width: min(var(--right-panel-width), calc(100vw - (var(--edge-gap) * 2)));
+      padding: 12px 14px;
+      font-size: 10px;
+      line-height: 1.38;
+    }
+
+    .map-source-panel {
+      position: fixed;
+      left: calc(var(--edge-gap) + var(--legend-width) + var(--panel-gap));
+      bottom: var(--edge-gap);
+      z-index: 1001;
+      width: min(
+        var(--source-width),
+        max(110px, calc(100vw - var(--legend-width) - (var(--edge-gap) * 3) - var(--panel-gap)))
+      );
+      padding: 10px 12px;
+      font-size: 11.5px;
+      line-height: 1.35;
+      text-align: center;
+    }
+
+    .map-source-panel-title {
+      font-weight: 700;
+      text-align: center;
+      color: var(--focus);
+      margin-bottom: 5px;
+    }
+
+    .map-source-panel p {
+      margin: 0;
+    }
+
+    .map-source-panel .credit-line {
+      margin-top: 5px;
+      color: rgba(243, 244, 246, 0.82);
+      font-size: 10.8px;
+    }
+
+    .map-legend {
+      z-index: 1000;
+      width: min(var(--legend-width), calc(100vw - (var(--edge-gap) * 2)));
+      padding: 10px 12px;
+      font-size: 12px;
+    }
+
+    .legend-title {
+      font-weight: 700;
+      color: var(--focus);
+      margin-bottom: 6px;
+      text-align: left;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 4px 0;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .legend-flow-preview {
+      position: relative;
+      width: 28px;
+      height: 8px;
+      flex: 0 0 auto;
+    }
+
+    .legend-flow-preview::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 3px;
+      width: 28px;
+      height: 3px;
+      border-radius: 999px;
+      opacity: 0.45;
+    }
+
+    .legend-flow-preview::after {
+      content: "";
+      position: absolute;
+      top: 1px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      animation: legendMove 1.4s linear infinite;
+    }
+
+    .legend-flow-preview.exporters::before,
+    .legend-flow-preview.exporters::after {
+      background: #4CC9F0;
+    }
+
+    .legend-flow-preview.importers::before,
+    .legend-flow-preview.importers::after {
+      background: #E76F7A;
+    }
+
+    .legend-flow-preview.secondary::before,
+    .legend-flow-preview.secondary::after {
+      background: #7A7F87;
+    }
+
+    @keyframes legendMove {
+      from { left: 0; }
+      to { left: 22px; }
+    }
+
+    .bottom-chart-panel {
+      z-index: 1000;
+      width: min(var(--chart-width), calc(100vw - (var(--edge-gap) * 2)));
+      padding: 10px 14px 12px;
+      font-family: Arial, sans-serif;
+    }
+
+    .chart-title {
+      text-align: center;
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: var(--focus);
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 185px 1fr 86px;
+      align-items: center;
+      gap: 8px;
+      margin: 4px 0;
+      font-size: 11px;
+    }
+
+    .bar-label {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text);
+    }
+
+    .bar-track {
+      height: 8px;
+      background: rgba(122, 127, 135, 0.26);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: var(--secondary);
+    }
+
+    .bar-value {
+      text-align: right;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .bar-row.focus .bar-label,
+    .bar-row.focus .bar-value {
+      color: var(--focus);
+      font-weight: 700;
+    }
+
+    .bar-row.focus .bar-fill {
+      background: var(--focus);
+    }
+
+    .map-description-title,
+    .hormuz-status-title {
+      font-size: 14px;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 8px;
+      color: var(--focus);
+    }
+
+    .map-description-section-title,
+    .hormuz-status-section-title {
+      font-size: 12px;
+      font-weight: 700;
+      margin-top: 9px;
+      text-align: center;
+      margin-bottom: 3px;
+      color: var(--focus);
+    }
+
+    .map-description-panel p,
+    .hormuz-status-panel p {
+      margin: 0 0 6px 0;
+    }
+
+    .timeline-list {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .timeline-list li {
+      margin: 0 0 6px 0;
+    }
+
+    .timeline-date {
+      color: var(--focus);
+      font-weight: 700;
+    }
+
+    .status-note {
+      margin-top: 8px;
+      padding-left: 10px;
+      border-left: 3px solid rgba(255, 183, 3, 0.85);
+    }
+
+    .inventory-chart {
+      margin-top: 7px;
+    }
+
+    .inventory-row {
+      display: grid;
+      grid-template-columns: 112px 1fr 52px;
+      align-items: center;
+      gap: 7px;
+      margin: 4px 0;
+      font-size: 10.5px;
+    }
+
+    .inventory-label {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text);
+    }
+
+    .inventory-track {
+      height: 7px;
+      border-radius: 999px;
+      background: rgba(122, 127, 135, 0.25);
+      overflow: hidden;
+    }
+
+    .inventory-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: rgba(255, 183, 3, 0.88);
+    }
+
+    .inventory-value {
+      text-align: right;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    @media (max-width: 1200px) {
+      :root {
+        --title-width: clamp(220px, 26vw, 320px);
+        --right-panel-width: clamp(260px, 38vw, 430px);
+        --source-width: clamp(190px, 20vw, 250px);
+      }
+
+      .bar-row {
+        grid-template-columns: 150px 1fr 76px;
+      }
+    }
+
+    @media (max-width: 900px) {
+      :root {
+        --edge-gap: 10px;
+        --panel-gap: 8px;
+        --title-width: clamp(180px, 24vw, 260px);
+        --right-panel-width: clamp(220px, 42vw, 340px);
+        --legend-width: clamp(132px, 18vw, 170px);
+        --source-width: clamp(160px, 18vw, 220px);
+      }
+
+      .map-title-main {
+        font-size: 16px;
+      }
+
+      .map-title-sub,
+      .map-source-panel,
+      .hormuz-status-panel,
+      .map-description-panel {
+        font-size: 10.5px;
+      }
+
+      .bottom-chart-panel {
+        padding: 8px 10px 10px;
+      }
+
+      .bar-row {
+        grid-template-columns: 120px 1fr 68px;
+        gap: 6px;
+        font-size: 10px;
+      }
+    }
+
+    @media (max-width: 700px) {
+      :root {
+        --title-width: clamp(140px, 28vw, 210px);
+        --right-panel-width: clamp(210px, 56vw, 300px);
+        --legend-width: clamp(118px, 24vw, 145px);
+        --source-width: clamp(125px, 22vw, 180px);
+      }
+
+      .map-title-main {
+        font-size: 14px;
+      }
+
+      .map-title-sub {
+        font-size: 9.5px;
+      }
+
+      .map-source-panel,
+      .map-legend,
+      .hormuz-status-panel,
+      .map-description-panel {
+        font-size: 9.5px;
+      }
+
+      .inventory-row {
+        grid-template-columns: 88px 1fr 42px;
+        gap: 6px;
+        font-size: 9px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      :root {
+        --edge-gap: 8px;
+        --panel-gap: 6px;
+        --title-width: clamp(110px, 24vw, 150px);
+        --right-panel-width: clamp(190px, 56vw, 240px);
+        --legend-width: clamp(102px, 22vw, 126px);
+        --source-width: clamp(96px, 18vw, 132px);
+      }
+
+      .map-title-panel,
+      .hormuz-status-panel,
+      .map-description-panel,
+      .map-source-panel,
+      .map-legend,
+      .bottom-chart-panel {
+        border-radius: 8px;
+      }
+
+      .map-title-panel {
+        padding: 8px 10px;
+      }
+
+      .hormuz-status-panel,
+      .map-description-panel,
+      .map-source-panel,
+      .map-legend,
+      .bottom-chart-panel {
+        padding: 8px 10px;
+      }
+
+      .map-title-main {
+        font-size: 13px;
+      }
+
+      .map-title-sub,
+      .map-source-panel,
+      .map-legend,
+      .hormuz-status-panel,
+      .map-description-panel {
+        font-size: 9px;
+      }
+
+      .bar-row {
+        grid-template-columns: 88px 1fr 58px;
+        gap: 5px;
+        font-size: 9px;
+      }
+    }
+
+    @media (max-height: 780px) {
+      :root {
+        --panel-max-height: min(40dvh, calc(100dvh - (var(--edge-gap) * 2)));
+      }
+
+      .map-title-main {
+        font-size: 16px;
+      }
+
+      .map-title-sub,
+      .map-source-panel,
+      .hormuz-status-panel,
+      .map-description-panel {
+        font-size: 10px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="mapTitlePanel" class="overlay-panel overlay-panel--soft overlay-panel--top-left map-title-panel">
+    <div class="map-title-main">
+      Global Oil Transit Flows and Maritime Chokepoints
+    </div>
+    <div class="map-title-sub">
+      Focus on the Strait of Hormuz and Major Trade Routes
+    </div>
+  </div>
+
+  <div id="hormuzStatusPanel" class="overlay-panel overlay-panel--top-right overlay-panel--scroll hormuz-status-panel">
+    <div class="hormuz-status-title">STRAIT OF HORMUZ: TIMELINE AND STATUS</div>
+
+    <div class="hormuz-status-section-title">Overview</div>
+    <p>
+      The Strait of Hormuz has been a primary flashpoint in the 2026 conflict between the United States, Israel, and Iran, following the launch of Operation Epic Fury on February 28, 2026.
+    </p>
+    <p>
+      The waterway has fluctuated between complete closure and "selective passage" for specific nations.
+    </p>
+
+    <div class="hormuz-status-section-title">Current Status</div>
+    <p class="status-note">
+      <strong>As of Apr 24, 2026:</strong> The Strait remained effectively closed to Western traffic, with mine-clearing expected to take months after hostilities.
+    </p>
+
+    <div class="hormuz-status-section-title">Strait of Hormuz – 2026 Conflict Highlights</div>
+    <ol class="timeline-list">
+      <li><span class="timeline-date">Feb 15–20, 2026:</span> Iran reportedly tripled oil exports and reduced storage in anticipation of conflict.</li>
+      <li><span class="timeline-date">Feb 28:</span> The U.S. and Israel launched Operation Epic Fury; Iran immediately announced the closure of the Strait of Hormuz.</li>
+      <li><span class="timeline-date">Early March:</span> Around 150 vessels were reported waiting outside the waterway as traffic was disrupted.</li>
+      <li><span class="timeline-date">Mar 2:</span> Iran officially declared the Strait closed to all traffic.</li>
+      <li><span class="timeline-date">Mar 4–8:</span> Global shipping through the Strait sharply declined; Brent crude rose above $100/barrel.</li>
+      <li><span class="timeline-date">Mar 5:</span> Iran shifted to a selective blockade, reportedly allowing some non-Western vessels while restricting Western-linked ships.</li>
+      <li><span class="timeline-date">Mar 10:</span> U.S. intelligence reported Iran had begun laying sea mines in the Strait.</li>
+      <li><span class="timeline-date">Mar 19:</span> The U.S. began military operations to re-open the waterway.</li>
+      <li><span class="timeline-date">Mar 26:</span> Iran reportedly allowed passage only for ships linked to China, Russia, India, Iraq, and Pakistan.</li>
+      <li><span class="timeline-date">Apr 8:</span> A two-week provisional ceasefire temporarily raised hopes of reopening.</li>
+      <li><span class="timeline-date">Apr 18:</span> After failed negotiations and continuing tensions, Iran re-closed the Strait.</li>
+      <li><span class="timeline-date">Apr 22:</span> Two commercial ships, Epaminondas and MSC Francesca, were reportedly seized off Oman.</li>
+    </ol>
+  </div>
+
+  <div class="overlay-panel overlay-panel--soft overlay-panel--center-bottom bottom-chart-panel">
+    <div class="chart-title">Global Maritime Oil Chokepoints</div>
+    <div id="chokepointBarChart"></div>
+  </div>
+
+  <div class="overlay-panel overlay-panel--soft overlay-panel--bottom-left map-legend">
+    <div class="legend-title">Legend</div>
+
+    <div class="legend-item">
+      <span class="legend-flow-preview exporters"></span>
+      <span>SOH Exporters</span>
+    </div>
+
+    <div class="legend-item">
+      <span class="legend-flow-preview importers"></span>
+      <span>SOH Importers</span>
+    </div>
+
+    <div class="legend-item">
+      <span class="legend-flow-preview secondary"></span>
+      <span>Other Chokepoints</span>
+    </div>
+
+    <div class="legend-item">
+      <span class="legend-dot" style="background:#FFB703;"></span>
+      <span>Strait of Hormuz Chokepoint</span>
+    </div>
+  </div>
+
+  <div id="mapSourcePanel" class="overlay-panel overlay-panel--soft map-source-panel">
+    <div class="map-source-panel-title">Map Description</div>
+    <p>This visualization shows global crude oil and condensate flows through major maritime chokepoints, with emphasis on the Strait of Hormuz and the Strait of Malacca.</p>
+    <p class="credit-line">Data are based on the World Oil Transit Chokepoints dataset from the U.S. Energy Information Administration updated in March 2026. Created by GTeduarte © 2026.</p>
+  </div>
+
+  <div id="mapDescriptionPanel" class="overlay-panel overlay-panel--bottom-right overlay-panel--scroll map-description-panel">
+    <div class="map-description-title">WORLD OIL TRANSIT CHOKEPOINTS</div>
+
+    <div class="map-description-section-title">Crude Oil and Petroleum Liquids Transported Through World Chokepoints</div>
+    <p>Major maritime chokepoints account for approximately 91.7% of global maritime oil trade, highlighting their strategic importance to global energy supply chains.</p>
+
+    <div class="map-description-section-title">Strait of Hormuz</div>
+    <p>In 1H 2025, the Strait of Hormuz carried around 20.9 million b/d of crude oil, condensate, and petroleum products, representing over one-fifth of global oil consumption. About 89% of crude oil and condensate flows were bound for Asia, mainly China, India, Japan, and South Korea.</p>
+
+    <div class="map-description-section-title">Strait of Malacca</div>
+    <p>The Strait of Malacca, between Malaysia and Indonesia, was the world’s busiest oil chokepoint, with about 23.2 million b/d passing through in 1H 2025, equivalent to around 29.1% of global maritime oil trade.</p>
+
+    <div class="map-description-section-title">Strategic Oil Inventories</div>
+    <p>As of April 20, 2026, EIA data indicate that China, the United States, and Japan held the largest strategic oil inventories in 2025.</p>
+    <div id="inventoryBarChart" class="inventory-chart"></div>
+  </div>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    const COLORS = {
+      inflow: '#4CC9F0',
+      outflow: '#E76F7A',
+      focus: '#FFB703',
+      secondary: '#7A7F87',
+      text: '#F3F4F6'
+    };
+
+    const inflowData = [
+      { origin_name: "Saudi Arabia", region_name: "Western Asia", origin_lon: 44.547, origin_lat: 24.123, destination_name: "Strait of Hormuz", destination_lon: 56.5, destination_lat: 26.6, mbpd: 5.55, pct_hormuz: 38 },
+      { origin_name: "Iraq", region_name: "Western Asia", origin_lon: 43.766, origin_lat: 33.05, destination_name: "Strait of Hormuz", destination_lon: 56.5, destination_lat: 26.6, mbpd: 3.28, pct_hormuz: 22 },
+      { origin_name: "United Arab Emirates", region_name: "Western Asia", origin_lon: 54.329, origin_lat: 23.917, destination_name: "Strait of Hormuz", destination_lon: 56.5, destination_lat: 26.6, mbpd: 2.05, pct_hormuz: 14 },
+      { origin_name: "Iran", region_name: "Southern Asia", origin_lon: 54.302, origin_lat: 32.561, destination_name: "Strait of Hormuz", destination_lon: 56.5, destination_lat: 26.6, mbpd: 1.59, pct_hormuz: 11 },
+      { origin_name: "Kuwait", region_name: "Western Asia", origin_lon: 47.616, origin_lat: 29.357, destination_name: "Strait of Hormuz", destination_lon: 56.5, destination_lat: 26.6, mbpd: 1.49, pct_hormuz: 10 },
+      { origin_name: "Qatar", region_name: "Western Asia", origin_lon: 51.194, origin_lat: 25.282, destination_name: "Strait of Hormuz", destination_lon: 56.5, destination_lat: 26.6, mbpd: 0.66, pct_hormuz: 4 }
+    ];
+
+    const outflowData = [
+      { destination_name: "China", destination_lon: 105.00, destination_lat: 35.00, source_name: "Strait of Hormuz", source_lon: 56.5, source_lat: 26.6, mbpd: 5.4, pct_from_hormuz: 37 },
+      { destination_name: "India", destination_lon: 78.96, destination_lat: 22.59, source_name: "Strait of Hormuz", source_lon: 56.5, source_lat: 26.6, mbpd: 2.0, pct_from_hormuz: 14 },
+      { destination_name: "South Korea", destination_lon: 127.77, destination_lat: 35.91, source_name: "Strait of Hormuz", source_lon: 56.5, source_lat: 26.6, mbpd: 1.7, pct_from_hormuz: 12 },
+      { destination_name: "Japan", destination_lon: 138.25, destination_lat: 36.20, source_name: "Strait of Hormuz", source_lon: 56.5, source_lat: 26.6, mbpd: 1.7, pct_from_hormuz: 12 },
+      { destination_name: "France", destination_lon: 2.00, destination_lat: 46.00, source_name: "Strait of Hormuz", source_lon: 56.5, source_lat: 26.6, mbpd: 0.6, pct_from_hormuz: 4 },
+      { destination_name: "United States", destination_lon: -98.58, destination_lat: 39.83, source_name: "Strait of Hormuz", source_lon: 56.5, source_lat: 26.6, mbpd: 0.4, pct_from_hormuz: 3 },
+      { destination_name: "Saudi Arabia", destination_lon: 45.08, destination_lat: 23.89, source_name: "Strait of Hormuz", source_lon: 56.5, source_lat: 26.6, mbpd: 0.0, pct_from_hormuz: 0 }
+    ];
+
+    const chokepoints = [
+      { id: "MAL", name: "Strait of Malacca", lon: 102.35, lat: 2.55, mbpd: 23.2, share: 29, active: false },
+      { id: "SOH", name: "Strait of Hormuz", lon: 56.5, lat: 26.6, mbpd: 20.9, share: 26, active: true },
+      { id: "SUZ", name: "Suez Canal and SUMED Pipeline", lon: 32.55, lat: 29.95, mbpd: 4.9, share: 6, active: false },
+      { id: "BAM", name: "Bab el-Mandeb", lon: 43.35, lat: 12.65, mbpd: 4.2, share: 5, active: false },
+      { id: "DNS", name: "Danish Straits", lon: 12.60, lat: 55.75, mbpd: 4.9, share: 6, active: false },
+      { id: "DAR", name: "Turkish Straits (Dardanelles)", lon: 26.40, lat: 40.20, mbpd: 3.7, share: 5, active: false },
+      { id: "PAN", name: "Panama Canal", lon: -79.60, lat: 9.10, mbpd: 2.3, share: 3, active: false },
+      { id: "CGH", name: "Cape of Good Hope", lon: 18.45, lat: -34.35, mbpd: 9.1, share: 11, active: false }
+    ];
+
+    const destinationCentroids = {
+      "China": { lon: 105.00, lat: 35.00 },
+      "South Korea": { lon: 127.77, lat: 35.91 },
+      "Japan": { lon: 138.25, lat: 36.20 },
+      "Singapore": { lon: 103.82, lat: 1.35 },
+      "Taiwan": { lon: 120.96, lat: 23.70 },
+      "Thailand": { lon: 100.99, lat: 15.87 },
+      "United States": { lon: -98.58, lat: 39.83 },
+      "India": { lon: 78.96, lat: 22.59 },
+      "Indonesia": { lon: 113.92, lat: -0.79 },
+      "Italy": { lon: 12.57, lat: 41.87 },
+      "Netherlands": { lon: 5.29, lat: 52.13 },
+      "Turkey": { lon: 35.24, lat: 38.96 },
+      "France": { lon: 2.00, lat: 46.00 },
+      "Greece": { lon: 21.82, lat: 39.07 },
+      "Poland": { lon: 19.15, lat: 51.92 },
+      "Finland": { lon: 25.75, lat: 61.92 },
+      "Germany": { lon: 10.45, lat: 51.17 },
+      "United Arab Emirates": { lon: 54.30, lat: 24.40 },
+      "Iraq": { lon: 43.68, lat: 33.22 },
+      "Iran": { lon: 53.69, lat: 32.43 },
+      "Kuwait": { lon: 47.48, lat: 29.31 },
+      "Oman": { lon: 57.00, lat: 21.00 },
+      "other Middle East": { lon: 45.00, lat: 24.00 },
+      "Brazil": { lon: -51.93, lat: -14.24 },
+      "other Americas": { lon: -70.00, lat: 5.00 },
+      "Russia": { lon: 90.00, lat: 60.00 },
+      "Angola": { lon: 17.87, lat: -11.20 },
+      "Nigeria": { lon: 8.68, lat: 9.08 },
+      "other Africa": { lon: 20.00, lat: 2.00 },
+      "Kazakhstan": { lon: 67.00, lat: 48.00 },
+      "Norway": { lon: 8.47, lat: 60.47 },
+      "United Kingdom": { lon: -3.44, lat: 55.38 },
+      "Egypt": { lon: 30.80, lat: 26.82 },
+      "Guyana": { lon: -58.93, lat: 4.86 },
+      "Africa": { lon: 20.00, lat: 2.00 },
+      "Americas": { lon: -75.00, lat: 10.00 }
+    };
+
+    const secondaryChokepointFlowsRaw = [
+      { source: "Strait of Malacca", source_lon: 102.35, source_lat: 2.55, destination: "China", mbpd: 7.90, pct: 48 },
+      { source: "Strait of Malacca", source_lon: 102.35, source_lat: 2.55, destination: "South Korea", mbpd: 2.43, pct: 15 },
+      { source: "Strait of Malacca", source_lon: 102.35, source_lat: 2.55, destination: "Japan", mbpd: 2.11, pct: 13 },
+      { source: "Strait of Malacca", source_lon: 102.35, source_lat: 2.55, destination: "Singapore", mbpd: 0.83, pct: 5 },
+      { source: "Strait of Malacca", source_lon: 102.35, source_lat: 2.55, destination: "Taiwan", mbpd: 0.76, pct: 5 },
+      { source: "Strait of Malacca", source_lon: 102.35, source_lat: 2.55, destination: "Thailand", mbpd: 0.69, pct: 4 },
+      { source: "Strait of Malacca", source_lon: 102.35, source_lat: 2.55, destination: "United States", mbpd: 0.23, pct: 1 },
+
+      { source: "Cape of Good Hope", source_lon: 18.45, source_lat: -34.35, destination: "China", mbpd: 2.52, pct: 42 },
+      { source: "Cape of Good Hope", source_lon: 18.45, source_lat: -34.35, destination: "India", mbpd: 0.83, pct: 14 },
+      { source: "Cape of Good Hope", source_lon: 18.45, source_lat: -34.35, destination: "South Korea", mbpd: 0.71, pct: 12 },
+      { source: "Cape of Good Hope", source_lon: 18.45, source_lat: -34.35, destination: "Taiwan", mbpd: 0.25, pct: 4 },
+      { source: "Cape of Good Hope", source_lon: 18.45, source_lat: -34.35, destination: "Indonesia", mbpd: 0.20, pct: 3 },
+      { source: "Cape of Good Hope", source_lon: 18.45, source_lat: -34.35, destination: "Singapore", mbpd: 0.19, pct: 3 },
+      { source: "Cape of Good Hope", source_lon: 18.45, source_lat: -34.35, destination: "United States", mbpd: 0.19, pct: 3 },
+
+      { source: "Dardanelles Strait", source_lon: 26.40, source_lat: 40.20, destination: "India", mbpd: 0.49, pct: 23 },
+      { source: "Dardanelles Strait", source_lon: 26.40, source_lat: 40.20, destination: "China", mbpd: 0.13, pct: 6 },
+      { source: "Dardanelles Strait", source_lon: 26.40, source_lat: 40.20, destination: "Italy", mbpd: 0.43, pct: 20 },
+      { source: "Dardanelles Strait", source_lon: 26.40, source_lat: 40.20, destination: "Netherlands", mbpd: 0.23, pct: 11 },
+      { source: "Dardanelles Strait", source_lon: 26.40, source_lat: 40.20, destination: "Turkey", mbpd: 0.20, pct: 9 },
+      { source: "Dardanelles Strait", source_lon: 26.40, source_lat: 40.20, destination: "France", mbpd: 0.14, pct: 7 },
+      { source: "Dardanelles Strait", source_lon: 26.40, source_lat: 40.20, destination: "Greece", mbpd: 0.10, pct: 5 },
+
+      { source: "Danish Straits", source_lon: 12.60, source_lat: 55.75, destination: "India", mbpd: 1.07, pct: 29 },
+      { source: "Danish Straits", source_lon: 12.60, source_lat: 55.75, destination: "China", mbpd: 0.03, pct: 1 },
+      { source: "Danish Straits", source_lon: 12.60, source_lat: 55.75, destination: "Poland", mbpd: 0.71, pct: 19 },
+      { source: "Danish Straits", source_lon: 12.60, source_lat: 55.75, destination: "Turkey", mbpd: 0.23, pct: 6 },
+      { source: "Danish Straits", source_lon: 12.60, source_lat: 55.75, destination: "Finland", mbpd: 0.21, pct: 6 },
+      { source: "Danish Straits", source_lon: 12.60, source_lat: 55.75, destination: "Germany", mbpd: 0.12, pct: 3 },
+      { source: "Danish Straits", source_lon: 12.60, source_lat: 55.75, destination: "Netherlands", mbpd: 0.02, pct: 1 },
+
+      { source: "Suez Canal and SUMED Pipeline", source_lon: 32.55, source_lat: 29.95, destination: "India", mbpd: 1.65, pct: 60 },
+      { source: "Suez Canal and SUMED Pipeline", source_lon: 32.55, source_lat: 29.95, destination: "China", mbpd: 0.14, pct: 5 },
+      { source: "Suez Canal and SUMED Pipeline", source_lon: 32.55, source_lat: 29.95, destination: "Poland", mbpd: 0.20, pct: 7 },
+      { source: "Suez Canal and SUMED Pipeline", source_lon: 32.55, source_lat: 29.95, destination: "Italy", mbpd: 0.17, pct: 6 },
+      { source: "Suez Canal and SUMED Pipeline", source_lon: 32.55, source_lat: 29.95, destination: "Africa", mbpd: 0.04, pct: 1 },
+      { source: "Suez Canal and SUMED Pipeline", source_lon: 32.55, source_lat: 29.95, destination: "Americas", mbpd: 0.09, pct: 3 }
+    ];
+
+    const secondaryImporterFlowsRaw = [
+      { origin: "Saudi Arabia", destination: "Strait of Malacca", destination_lon: 102.35, destination_lat: 2.55, mbpd: 4.22, pct: 25 },
+      { origin: "United Arab Emirates", destination: "Strait of Malacca", destination_lon: 102.35, destination_lat: 2.55, mbpd: 2.46, pct: 15 },
+      { origin: "Iraq", destination: "Strait of Malacca", destination_lon: 102.35, destination_lat: 2.55, mbpd: 1.82, pct: 11 },
+      { origin: "Iran", destination: "Strait of Malacca", destination_lon: 102.35, destination_lat: 2.55, mbpd: 1.60, pct: 10 },
+      { origin: "Kuwait", destination: "Strait of Malacca", destination_lon: 102.35, destination_lat: 2.55, mbpd: 1.11, pct: 7 },
+      { origin: "Oman", destination: "Strait of Malacca", destination_lon: 102.35, destination_lat: 2.55, mbpd: 0.87, pct: 5 },
+      { origin: "other Middle East", destination: "Strait of Malacca", destination_lon: 102.35, destination_lat: 2.55, mbpd: 0.58, pct: 3 },
+      { origin: "United States", destination: "Strait of Malacca", destination_lon: 102.35, destination_lat: 2.55, mbpd: 0.84, pct: 5 },
+      { origin: "Brazil", destination: "Strait of Malacca", destination_lon: 102.35, destination_lat: 2.55, mbpd: 0.80, pct: 5 },
+      { origin: "other Americas", destination: "Strait of Malacca", destination_lon: 102.35, destination_lat: 2.55, mbpd: 0.35, pct: 2 },
+      { origin: "Russia", destination: "Strait of Malacca", destination_lon: 102.35, destination_lat: 2.55, mbpd: 0.36, pct: 2 },
+
+      { origin: "United States", destination: "Cape of Good Hope", destination_lon: 18.45, destination_lat: -34.35, mbpd: 1.38, pct: 23 },
+      { origin: "Brazil", destination: "Cape of Good Hope", destination_lon: 18.45, destination_lat: -34.35, mbpd: 1.07, pct: 18 },
+      { origin: "other Americas", destination: "Cape of Good Hope", destination_lon: 18.45, destination_lat: -34.35, mbpd: 0.67, pct: 11 },
+      { origin: "Angola", destination: "Cape of Good Hope", destination_lon: 18.45, destination_lat: -34.35, mbpd: 0.76, pct: 13 },
+      { origin: "Nigeria", destination: "Cape of Good Hope", destination_lon: 18.45, destination_lat: -34.35, mbpd: 0.38, pct: 6 },
+      { origin: "other Africa", destination: "Cape of Good Hope", destination_lon: 18.45, destination_lat: -34.35, mbpd: 0.74, pct: 12 },
+      { origin: "Iraq", destination: "Cape of Good Hope", destination_lon: 18.45, destination_lat: -34.35, mbpd: 0.42, pct: 7 },
+      { origin: "Saudi Arabia", destination: "Cape of Good Hope", destination_lon: 18.45, destination_lat: -34.35, mbpd: 0.23, pct: 4 },
+      { origin: "Kazakhstan", destination: "Cape of Good Hope", destination_lon: 18.45, destination_lat: -34.35, mbpd: 0.16, pct: 3 },
+
+      { origin: "Kazakhstan", destination: "Dardanelles Strait", destination_lon: 26.40, destination_lat: 40.20, mbpd: 1.50, pct: 76 },
+      { origin: "Russia", destination: "Dardanelles Strait", destination_lon: 26.40, destination_lat: 40.20, mbpd: 0.47, pct: 24 },
+
+      { origin: "Russia", destination: "Danish Straits", destination_lon: 12.60, destination_lat: 55.75, mbpd: 1.36, pct: 52 },
+      { origin: "Norway", destination: "Danish Straits", destination_lon: 12.60, destination_lat: 55.75, mbpd: 0.52, pct: 20 },
+      { origin: "United Kingdom", destination: "Danish Straits", destination_lon: 12.60, destination_lat: 55.75, mbpd: 0.12, pct: 5 },
+      { origin: "Egypt", destination: "Danish Straits", destination_lon: 12.60, destination_lat: 55.75, mbpd: 0.29, pct: 11 },
+      { origin: "Guyana", destination: "Danish Straits", destination_lon: 12.60, destination_lat: 55.75, mbpd: 0.07, pct: 3 },
+      { origin: "United States", destination: "Danish Straits", destination_lon: 12.60, destination_lat: 55.75, mbpd: 0.06, pct: 2 }
+    ];
+
+    const totalMappedHormuzInflow = inflowData.reduce((sum, d) => sum + d.mbpd, 0);
+    const totalMappedHormuzOutflow = outflowData.reduce((sum, d) => sum + d.mbpd, 0);
+
+    const map = L.map('map', {
+      zoomControl: false,
+      worldCopyJump: false
+    }).setView([10, 68], 3);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+      subdomains: 'abcd',
+      maxZoom: 20,
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+    }).addTo(map);
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'flow-canvas';
+    map.getContainer().appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+
+    const mapDescriptionPanel = document.getElementById('mapDescriptionPanel');
+    const mapSourcePanel = document.getElementById('mapSourcePanel');
+    const mapTitlePanel = document.getElementById('mapTitlePanel');
+    const hormuzStatusPanel = document.getElementById('hormuzStatusPanel');
+    const inventoryBarChart = document.getElementById('inventoryBarChart');
+    const chokepointBarChart = document.getElementById('chokepointBarChart');
+
+    let lastTimestamp = null;
+
+    function hexToRgb(hex) {
+      const clean = hex.replace('#', '');
+      const bigint = parseInt(clean, 16);
+      return {
+        r: (bigint >> 16) & 255,
+        g: (bigint >> 8) & 255,
+        b: bigint & 255
+      };
+    }
+
+    function rgba(hex, alpha) {
+      const c = hexToRgb(hex);
+      return `rgba(${c.r}, ${c.g}, ${c.b}, ${alpha})`;
+    }
+
+    function resizeCanvas(force = false) {
+      const size = map.getSize();
+
+      if (!force && canvas.width === size.x && canvas.height === size.y) {
+        return false;
+      }
+
+      canvas.width = size.x;
+      canvas.height = size.y;
+      canvas.style.width = `${size.x}px`;
+      canvas.style.height = `${size.y}px`;
+      canvas.style.left = '0px';
+      canvas.style.top = '0px';
+
+      return true;
+    }
+
+    function project(lat, lon) {
+      return map.latLngToContainerPoint([lat, lon]);
+    }
+
+    function makePerpendicularControlPoint(p0, p2, curvature = 0.22) {
+      const mx = (p0.x + p2.x) / 2;
+      const my = (p0.y + p2.y) / 2;
+      const dx = p2.x - p0.x;
+      const dy = p2.y - p0.y;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const nx = -dy / len;
+      const ny = dx / len;
+      const offset = len * curvature;
+
+      return {
+        x: mx + nx * offset,
+        y: my + ny * offset
+      };
+    }
+
+    function makeOutflowControlPoint(p0, p2, targetName) {
+      const mx = (p0.x + p2.x) / 2;
+      const my = (p0.y + p2.y) / 2;
+      const dx = p2.x - p0.x;
+      const dy = p2.y - p0.y;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+
+      const eastBiasMap = {
+        "India": 0.04,
+        "China": 0.10,
+        "South Korea": 0.14,
+        "Japan": 0.18,
+        "France": 0.02,
+        "United States": 0.00,
+        "Saudi Arabia": 0.00
+      };
+
+      const southBiasMap = {
+        "India": 0.14,
+        "China": 0.20,
+        "South Korea": 0.24,
+        "Japan": 0.28,
+        "France": 0.14,
+        "United States": 0.16,
+        "Saudi Arabia": 0.10
+      };
+
+      return {
+        x: mx + len * (eastBiasMap[targetName] ?? 0.08),
+        y: my + len * (southBiasMap[targetName] ?? 0.18)
+      };
+    }
+
+    function quadraticPoint(p0, p1, p2, t) {
+      const mt = 1 - t;
+      return {
+        x: mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x,
+        y: mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y
+      };
+    }
+
+    function quadraticTangent(p0, p1, p2, t) {
+      return {
+        x: 2 * (1 - t) * (p1.x - p0.x) + 2 * t * (p2.x - p1.x),
+        y: 2 * (1 - t) * (p1.y - p0.y) + 2 * t * (p2.y - p1.y)
+      };
+    }
+
+    function lineWidthForMbpd(mbpd) {
+      return 1.1 + mbpd * 0.95;
+    }
+
+    function particleRadiusForMbpd(mbpd) {
+      return 1.8 + mbpd * 0.26;
+    }
+
+    function particleCountForMbpd(mbpd) {
+      if (mbpd <= 0) return 0;
+      return Math.max(1, Math.round(mbpd));
+    }
+
+    function particleSpeedForMbpd(mbpd) {
+      return 0.05 + mbpd * 0.02;
+    }
+
+    const inboundFlows = inflowData.map(d => {
+      const count = particleCountForMbpd(d.mbpd);
+      const particles = Array.from({ length: count }, (_, i) => ({
+        t: (i / Math.max(count, 1)) * 0.98,
+        speed: particleSpeedForMbpd(d.mbpd)
+      }));
+
+      return {
+        type: 'inbound',
+        source_name: d.origin_name,
+        source_lon: d.origin_lon,
+        source_lat: d.origin_lat,
+        target_name: d.destination_name,
+        target_lon: d.destination_lon,
+        target_lat: d.destination_lat,
+        mbpd: d.mbpd,
+        pct: d.pct_hormuz,
+        particles
+      };
+    });
+
+    const outboundFlows = outflowData
+      .filter(d => d.mbpd > 0)
+      .map(d => {
+        const count = particleCountForMbpd(d.mbpd);
+        const particles = Array.from({ length: count }, (_, i) => ({
+          t: (i / Math.max(count, 1)) * 0.98,
+          speed: particleSpeedForMbpd(d.mbpd)
+        }));
+
+        return {
+          type: 'outbound',
+          source_name: d.source_name,
+          source_lon: d.source_lon,
+          source_lat: d.source_lat,
+          target_name: d.destination_name,
+          target_lon: d.destination_lon,
+          target_lat: d.destination_lat,
+          mbpd: d.mbpd,
+          pct: d.pct_from_hormuz,
+          particles
+        };
+      });
+
+    const secondaryFlows = secondaryChokepointFlowsRaw
+      .filter(d => d.mbpd > 0 && destinationCentroids[d.destination])
+      .map((d, index) => {
+        const dest = destinationCentroids[d.destination];
+        const count = Math.max(1, Math.ceil(d.mbpd));
+
+        const particles = Array.from({ length: count }, (_, i) => ({
+          t: ((i / count) + (index * 0.07)) % 1,
+          speed: 0.025 + d.mbpd * 0.008
+        }));
+
+        return {
+          type: 'secondary',
+          source_name: d.source,
+          source_lon: d.source_lon,
+          source_lat: d.source_lat,
+          target_name: d.destination,
+          target_lon: dest.lon,
+          target_lat: dest.lat,
+          mbpd: d.mbpd,
+          pct: d.pct,
+          particles
+        };
+      });
+
+    const secondaryImporterFlows = secondaryImporterFlowsRaw
+      .filter(d => d.mbpd > 0 && destinationCentroids[d.origin])
+      .map((d, index) => {
+        const origin = destinationCentroids[d.origin];
+        const count = Math.max(1, Math.ceil(d.mbpd));
+
+        const particles = Array.from({ length: count }, (_, i) => ({
+          t: ((i / count) + (index * 0.05)) % 1,
+          speed: 0.022 + d.mbpd * 0.007
+        }));
+
+        return {
+          type: 'secondary',
+          source_name: d.origin,
+          source_lon: origin.lon,
+          source_lat: origin.lat,
+          target_name: d.destination,
+          target_lon: d.destination_lon,
+          target_lat: d.destination_lat,
+          mbpd: d.mbpd,
+          pct: d.pct,
+          particles
+        };
+      });
+
+    const strategicOilInventories = [
+      { name: "China", barrels: 1397 },
+      { name: "United States", barrels: 413 },
+      { name: "Japan", barrels: 263 },
+      { name: "OECD Europe", barrels: 173 },
+      { name: "Saudi Arabia", barrels: 82 },
+      { name: "South Korea", barrels: 79 },
+      { name: "Iran", barrels: 71 },
+      { name: "United Arab Emirates", barrels: 34 },
+      { name: "India", barrels: 21 }
+    ];
+
+    const flowLabelRegistry = [];
+
+    function getHormuzImporterTooltipOptions(destinationName) {
+      const positions = {
+        "China": { direction: "right", offset: [10, 0] },
+        "India": { direction: "bottom", offset: [0, 10] },
+        "South Korea": { direction: "right", offset: [10, -4] },
+        "Japan": { direction: "right", offset: [10, 0] },
+        "France": { direction: "top", offset: [0, -10] },
+        "United States": { direction: "top", offset: [0, -10] }
+      };
+
+      return positions[destinationName] ?? { direction: "right", offset: [10, 0] };
+    }
+
+    function getHormuzExporterTooltipOptions(originName) {
+      const positions = {
+        "Saudi Arabia": { direction: "left", offset: [-10, 0] },
+        "Iraq": { direction: "top", offset: [0, -10] },
+        "United Arab Emirates": { direction: "right", offset: [10, 0] },
+        "Iran": { direction: "top", offset: [0, -10] },
+        "Kuwait": { direction: "left", offset: [-10, 0] },
+        "Qatar": { direction: "bottom", offset: [0, 10] }
+      };
+
+      return positions[originName] ?? { direction: "top", offset: [0, -10] };
+    }
+
+    function registerFlowLabel(entry) {
+      flowLabelRegistry.push(entry);
+    }
+
+    function bindFlowLabel(entry) {
+      if (entry.marker.getTooltip()) return;
+
+      entry.marker.bindTooltip(entry.label, {
+        permanent: true,
+        direction: entry.tooltipOptions.direction,
+        offset: entry.tooltipOptions.offset,
+        opacity: 1,
+        className: entry.className
+      }).openTooltip();
+    }
+
+    function unbindFlowLabel(entry) {
+      if (!entry.marker.getTooltip()) return;
+      entry.marker.unbindTooltip();
+    }
+
+    function rectsOverlap(a, b, padding = 6) {
+      return !(
+        a.right + padding < b.left ||
+        a.left - padding > b.right ||
+        a.bottom + padding < b.top ||
+        a.top - padding > b.bottom
+      );
+    }
+
+    function applyLabelCollisionDetection() {
+      const activeLabels = [];
+
+      if (window.hormuzMarker && window.hormuzMarker.getTooltip()) {
+        const el = window.hormuzMarker.getTooltip().getElement();
+        if (el) {
+          activeLabels.push({
+            priority: 9999,
+            el
+          });
+        }
+      }
+
+      flowLabelRegistry.forEach(entry => {
+        const tooltip = entry.marker.getTooltip();
+        const el = tooltip ? tooltip.getElement() : null;
+        if (!el) return;
+
+        activeLabels.push({
+          priority: entry.priority,
+          el
+        });
+      });
+
+      activeLabels.sort((a, b) => b.priority - a.priority);
+      activeLabels.forEach(item => {
+        item.el.style.display = '';
+      });
+
+      const occupied = [];
+
+      activeLabels.forEach(item => {
+        const rect = item.el.getBoundingClientRect();
+        const overlaps = occupied.some(existing => rectsOverlap(rect, existing, 6));
+
+        if (overlaps) {
+          item.el.style.display = 'none';
+        } else {
+          occupied.push(rect);
+        }
+      });
+    }
+
+    function syncFlowLabelsByZoom() {
+      const zoom = map.getZoom();
+
+      flowLabelRegistry.forEach(entry => {
+        if (zoom >= entry.minZoom) {
+          bindFlowLabel(entry);
+        } else {
+          unbindFlowLabel(entry);
+        }
+      });
+
+      requestAnimationFrame(applyLabelCollisionDetection);
+    }
+
+    function renderInventoryBarChart() {
+      const maxValue = Math.max(...strategicOilInventories.map(d => d.barrels));
+      inventoryBarChart.innerHTML = strategicOilInventories.map(d => {
+        const width = (d.barrels / maxValue) * 100;
+        return `
+          <div class="inventory-row">
+            <div class="inventory-label">${d.name}</div>
+            <div class="inventory-track">
+              <div class="inventory-fill" style="width:${width}%"></div>
+            </div>
+            <div class="inventory-value">${d.barrels}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function updateOverviewPanelsByZoom() {
+      const showOverview = map.getZoom() <= 3;
+      const overviewPanels = [
+        mapDescriptionPanel,
+        mapSourcePanel,
+        mapTitlePanel,
+        hormuzStatusPanel
+      ];
+
+      overviewPanels.forEach(panel => {
+        if (!panel) return;
+        panel.classList.toggle('hidden', !showOverview);
+      });
+    }
+
+    function renderChokepointBarChart() {
+      const maxValue = Math.max(...chokepoints.map(d => d.mbpd));
+
+      chokepointBarChart.innerHTML = chokepoints.map(d => {
+        const width = (d.mbpd / maxValue) * 100;
+        const isFocus = d.id === 'SOH';
+
+        return `
+          <div class="bar-row ${isFocus ? 'focus' : ''}">
+            <div class="bar-label">${d.name}</div>
+            <div class="bar-track">
+              <div class="bar-fill" style="width:${width}%"></div>
+            </div>
+            <div class="bar-value">${d.mbpd.toFixed(1)} mb/d · ${d.share}%</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    renderChokepointBarChart();
+
+    inflowData.forEach(d => {
+      const radius = 4 + d.mbpd * 1.2;
+
+      const marker = L.circleMarker([d.origin_lat, d.origin_lon], {
+        radius,
+        weight: 1.2,
+        color: rgba(COLORS.inflow, 0.95),
+        fillColor: rgba(COLORS.inflow, 0.90),
+        fillOpacity: 1
+      })
+      .bindPopup(
+        '<b>Inflow Origin:</b> ' + d.origin_name +
+        '<br><b>Region:</b> ' + d.region_name +
+        '<br><b>Flow to Strait of Hormuz:</b> ' + d.mbpd.toFixed(2) + ' mb/d' +
+        '<br><b>Contribution:</b> ' + d.pct_hormuz + '%'
+      )
+      .addTo(map);
+
+      registerFlowLabel({
+        marker,
+        label: `${d.origin_name} (${d.mbpd.toFixed(1)} mb/d)`,
+        className: 'hormuz-exporter-label',
+        tooltipOptions: getHormuzExporterTooltipOptions(d.origin_name),
+        minZoom: 5,
+        priority: d.mbpd
+      });
+    });
+
+    outflowData.forEach(d => {
+      const radius = d.mbpd > 0 ? (4 + d.mbpd * 1.1) : 4;
+
+      const marker = L.circleMarker([d.destination_lat, d.destination_lon], {
+        radius,
+        weight: 1.2,
+        color: rgba(COLORS.outflow, d.mbpd > 0 ? 0.92 : 0.50),
+        fillColor: rgba(COLORS.outflow, d.mbpd > 0 ? 0.75 : 0.25),
+        fillOpacity: 1
+      })
+      .bindPopup(
+        '<b>Outflow Destination:</b> ' + d.destination_name +
+        '<br><b>Flow from Strait of Hormuz:</b> ' + d.mbpd.toFixed(1) + ' mb/d' +
+        '<br><b>Contribution:</b> ' + d.pct_from_hormuz + '%' +
+        '<br><b>Centroid (approx.):</b> ' + d.destination_lat.toFixed(2) + ', ' + d.destination_lon.toFixed(2)
+      )
+      .addTo(map);
+
+      if (d.mbpd <= 0) return;
+
+      registerFlowLabel({
+        marker,
+        label: `${d.destination_name} (${d.mbpd.toFixed(1)} mb/d)`,
+        className: 'hormuz-importer-label',
+        tooltipOptions: getHormuzImporterTooltipOptions(d.destination_name),
+        minZoom: 4,
+        priority: d.mbpd
+      });
+    });
+
+    const greyLabelLayer = L.layerGroup().addTo(map);
+
+    chokepoints.forEach(cp => {
+      const isActive = cp.active;
+
+      const marker = L.circleMarker([cp.lat, cp.lon], {
+        radius: isActive ? 10 : 7,
+        weight: isActive ? 1.6 : 1.1,
+        color: isActive ? rgba(COLORS.focus, 0.98) : rgba(COLORS.secondary, 0.95),
+        fillColor: isActive ? rgba(COLORS.focus, 0.92) : rgba(COLORS.secondary, 0.70),
+        fillOpacity: 1
+      })
+      .bindPopup(
+        '<b>Chokepoint:</b> ' + cp.name +
+        '<br><b>Volume:</b> ' + cp.mbpd.toFixed(1) + ' mb/d' +
+        '<br><b>Percentage contribution:</b> ' + cp.share + '%' +
+        (isActive
+          ? '<br><b>Mapped inflow total:</b> ' + totalMappedHormuzInflow.toFixed(2) + ' mb/d' +
+            '<br><b>Mapped outflow total:</b> ' + totalMappedHormuzOutflow.toFixed(2) + ' mb/d'
+          : '<br><span style="color:' + COLORS.text + '; opacity:0.85;">Greyed for now</span>')
+      )
+      .addTo(map);
+
+      if (isActive) {
+        window.hormuzMarker = marker;
+        window.hormuzTooltipText = `${cp.name} (${cp.share}%)`;
+      } else {
+        const labelHtml = `
+          <div class="chokepoint-label-muted-div">
+            ${cp.name} (${cp.share}%)
+          </div>
+        `;
+
+        const labelMarker = L.marker([cp.lat, cp.lon], {
+          interactive: false,
+          icon: L.divIcon({
+            className: 'chokepoint-label-muted-wrap',
+            html: labelHtml,
+            iconSize: null,
+            iconAnchor: [-10, 10]
+          })
+        });
+
+        greyLabelLayer.addLayer(labelMarker);
+      }
+    });
+
+    function updateLabelsByZoom() {
+      const showChokepointLabels = map.getZoom() >= 4;
+
+      if (showChokepointLabels) {
+        if (!map.hasLayer(greyLabelLayer)) map.addLayer(greyLabelLayer);
+      } else {
+        if (map.hasLayer(greyLabelLayer)) map.removeLayer(greyLabelLayer);
+      }
+
+      if (window.hormuzMarker) {
+        if (showChokepointLabels) {
+          if (!window.hormuzMarker.getTooltip()) {
+            window.hormuzMarker.bindTooltip(
+              window.hormuzTooltipText,
+              {
+                permanent: true,
+                direction: 'top',
+                offset: [0, -10],
+                opacity: 1,
+                className: 'chokepoint-label-active'
+              }
+            ).openTooltip();
+          }
+        } else if (window.hormuzMarker.getTooltip()) {
+          window.hormuzMarker.unbindTooltip();
+        }
+      }
+
+      syncFlowLabelsByZoom();
+    }
+
+    function drawSingleFlow(flow, deltaSeconds) {
+      const p0 = project(flow.source_lat, flow.source_lon);
+      const p2 = project(flow.target_lat, flow.target_lon);
+
+      let p1;
+      if (flow.type === 'inbound') {
+        p1 = makePerpendicularControlPoint(p0, p2, 0.22);
+      } else if (flow.type === 'outbound') {
+        p1 = makeOutflowControlPoint(p0, p2, flow.target_name);
+      } else {
+        p1 = makePerpendicularControlPoint(p0, p2, 0.10);
+      }
+
+      const gradient = ctx.createLinearGradient(p0.x, p0.y, p2.x, p2.y);
+
+      if (flow.type === 'inbound') {
+        gradient.addColorStop(0.00, rgba(COLORS.inflow, 0.72));
+        gradient.addColorStop(0.55, rgba(COLORS.inflow, 0.48));
+        gradient.addColorStop(1.00, rgba(COLORS.focus, 0.34));
+      } else if (flow.type === 'outbound') {
+        gradient.addColorStop(0.00, rgba(COLORS.focus, 0.68));
+        gradient.addColorStop(0.50, rgba(COLORS.outflow, 0.48));
+        gradient.addColorStop(1.00, rgba(COLORS.outflow, 0.30));
+      } else {
+        gradient.addColorStop(0.00, rgba(COLORS.secondary, 0.28));
+        gradient.addColorStop(0.55, rgba(COLORS.secondary, 0.20));
+        gradient.addColorStop(1.00, rgba(COLORS.secondary, 0.12));
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      ctx.quadraticCurveTo(p1.x, p1.y, p2.x, p2.y);
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = flow.type === 'secondary'
+        ? Math.max(0.8, 0.8 + flow.mbpd * 0.45)
+        : lineWidthForMbpd(flow.mbpd);
+      ctx.lineCap = 'round';
+      ctx.shadowBlur = 0;
+      ctx.stroke();
+
+      flow.particles.forEach(particle => {
+        particle.t += particle.speed * deltaSeconds;
+        if (particle.t > 1) particle.t -= 1;
+
+        const pt = quadraticPoint(p0, p1, p2, particle.t);
+        const tangent = quadraticTangent(p0, p1, p2, particle.t);
+        const angle = Math.atan2(tangent.y, tangent.x);
+
+        let particleColor;
+        if (flow.type === 'inbound') particleColor = COLORS.inflow;
+        else if (flow.type === 'outbound') particleColor = COLORS.outflow;
+        else particleColor = COLORS.secondary;
+
+        const alpha = flow.type === 'secondary' ? 0.50 : 0.95;
+        const glowAlpha = flow.type === 'secondary' ? 0.30 : 0.60;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(
+          pt.x,
+          pt.y,
+          flow.type === 'secondary'
+            ? Math.max(1.2, 1.4 + flow.mbpd * 0.12)
+            : particleRadiusForMbpd(flow.mbpd),
+          0,
+          Math.PI * 2
+        );
+        ctx.fillStyle = rgba(particleColor, alpha);
+        ctx.shadowColor = rgba(particleColor, glowAlpha);
+        ctx.shadowBlur = flow.type === 'secondary' ? 3 : 7;
+        ctx.fill();
+        ctx.restore();
+
+        const tailLen = flow.type === 'secondary'
+          ? 4 + flow.mbpd * 0.25
+          : 6 + flow.mbpd * 0.6;
+
+        ctx.beginPath();
+        ctx.moveTo(pt.x, pt.y);
+        ctx.lineTo(
+          pt.x - Math.cos(angle) * tailLen,
+          pt.y - Math.sin(angle) * tailLen
+        );
+        ctx.strokeStyle = rgba(particleColor, flow.type === 'secondary' ? 0.24 : 0.45);
+        ctx.lineWidth = flow.type === 'secondary'
+          ? 1
+          : Math.max(1, particleRadiusForMbpd(flow.mbpd) * 0.75);
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      });
+    }
+
+    function drawFrame(deltaSeconds) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      secondaryImporterFlows.forEach(flow => drawSingleFlow(flow, deltaSeconds));
+      secondaryFlows.forEach(flow => drawSingleFlow(flow, deltaSeconds));
+      inboundFlows.forEach(flow => drawSingleFlow(flow, deltaSeconds));
+      outboundFlows.forEach(flow => drawSingleFlow(flow, deltaSeconds));
+    }
+
+    function animate(timestamp) {
+      if (lastTimestamp == null) lastTimestamp = timestamp;
+      const deltaSeconds = Math.min((timestamp - lastTimestamp) / 1000, 0.05);
+      lastTimestamp = timestamp;
+
+      drawFrame(deltaSeconds);
+      requestAnimationFrame(animate);
+    }
+
+    function redrawNow() {
+      resizeCanvas(true);
+      drawFrame(0);
+      requestAnimationFrame(applyLabelCollisionDetection);
+    }
+
+    map.on('zoomend', updateLabelsByZoom);
+    map.on('zoomend', updateOverviewPanelsByZoom);
+    map.on('zoomend', redrawNow);
+    map.on('resize', redrawNow);
+    map.on('viewreset', redrawNow);
+    map.on('moveend', () => requestAnimationFrame(applyLabelCollisionDetection));
+
+    renderInventoryBarChart();
+    updateOverviewPanelsByZoom();
+    updateLabelsByZoom();
+    resizeCanvas(true);
+    drawFrame(0);
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
