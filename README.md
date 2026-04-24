@@ -1,4 +1,4 @@
-# Strait of Hormuz Oil Transit Map (2026)
+# Strait of Hormuz Oil Transit Map
 
 Interactive visualization of global oil transit chokepoints in 2026, focused on the Strait of Hormuz, with animated trade flows, conflict timeline, and responsive map panels.
 
